@@ -12,12 +12,11 @@ import (
 	"github.com/xtls/xray-core/common/net"
 )
 
-//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
-
 type Interface interface {
 	net.Conn
 	HandshakeContext(ctx context.Context) error
 	VerifyHostname(host string) error
+	HandshakeContextServerName(ctx context.Context) string
 	NegotiatedProtocol() string
 }
 
@@ -45,15 +44,11 @@ func (c *Conn) WriteMultiBuffer(mb buf.MultiBuffer) error {
 	return err
 }
 
-func (c *Conn) HandshakeAddressContext(ctx context.Context) net.Address {
+func (c *Conn) HandshakeContextServerName(ctx context.Context) string {
 	if err := c.HandshakeContext(ctx); err != nil {
-		return nil
+		return ""
 	}
-	state := c.ConnectionState()
-	if state.ServerName == "" {
-		return nil
-	}
-	return net.ParseAddress(state.ServerName)
+	return c.ConnectionState().ServerName
 }
 
 func (c *Conn) NegotiatedProtocol() string {
@@ -87,15 +82,11 @@ func (c *UConn) Close() error {
 	return c.Conn.Close()
 }
 
-func (c *UConn) HandshakeAddressContext(ctx context.Context) net.Address {
+func (c *UConn) HandshakeContextServerName(ctx context.Context) string {
 	if err := c.HandshakeContext(ctx); err != nil {
-		return nil
+		return ""
 	}
-	state := c.ConnectionState()
-	if state.ServerName == "" {
-		return nil
-	}
-	return net.ParseAddress(state.ServerName)
+	return c.ConnectionState().ServerName
 }
 
 // WebsocketHandshake basically calls UConn.Handshake inside it but it will only send
@@ -137,6 +128,7 @@ func UClient(c net.Conn, config *tls.Config, fingerprint *utls.ClientHelloID) ne
 
 func copyConfig(c *tls.Config) *utls.Config {
 	return &utls.Config{
+		Rand:                  c.Rand,
 		RootCAs:               c.RootCAs,
 		ServerName:            c.ServerName,
 		InsecureSkipVerify:    c.InsecureSkipVerify,
@@ -167,7 +159,7 @@ func init() {
 
 func GetFingerprint(name string) (fingerprint *utls.ClientHelloID) {
 	if name == "" {
-		return
+		return &utls.HelloChrome_Auto
 	}
 	if fingerprint = PresetFingerprints[name]; fingerprint != nil {
 		return
@@ -193,6 +185,7 @@ var PresetFingerprints = map[string]*utls.ClientHelloID{
 	"qq":         &utls.HelloQQ_Auto,
 	"random":     nil,
 	"randomized": nil,
+	"unsafe":     nil,
 }
 
 var ModernFingerprints = map[string]*utls.ClientHelloID{
